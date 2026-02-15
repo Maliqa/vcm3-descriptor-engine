@@ -5,13 +5,13 @@ import math
 # PAGE CONFIG
 # =========================================================
 
-st.set_page_config(page_title="VCM-3 Smart Configurator v3", layout="wide")
+st.set_page_config(page_title="VCM-3 Smart Configurator v3.1", layout="wide")
 
-st.title("VCM-3 Smart Configurator v3")
-st.caption("Basic Mode (Default) + Advanced Engineering Mode")
+st.title("VCM-3 Smart Configurator v3.1")
+st.caption("Basic Mode (Junior) + Advanced Mode (Senior)")
 
 # =========================================================
-# MODE TOGGLE
+# MODE SELECTION
 # =========================================================
 
 st.sidebar.header("Mode Selection")
@@ -19,12 +19,11 @@ st.sidebar.header("Mode Selection")
 mode = st.sidebar.radio(
     "Select Mode",
     ["Basic", "Advanced"],
-    index=0,
-    help="Basic: Simplified worksheet view. Advanced: Full engineering transparency."
+    index=0
 )
 
 # =========================================================
-# CORE MACHINE INPUT
+# MACHINE INPUT
 # =========================================================
 
 st.sidebar.header("Machine Information")
@@ -52,7 +51,6 @@ fault_looseness = st.sidebar.checkbox("Looseness")
 fault_gear = st.sidebar.checkbox("Gear Fault")
 fault_bearing = st.sidebar.checkbox("Bearing Fault")
 
-# Advanced only inputs
 if mode == "Advanced":
     harmonic_order = st.sidebar.selectbox("Harmonic Coverage", [2,3,4,5,6], index=2)
 else:
@@ -66,13 +64,13 @@ if fault_gear:
     if mode == "Advanced":
         sideband_order = st.sidebar.selectbox("Sideband ±nX", [1,2,3], index=1)
 
-envelope_upper = 8000
-if fault_bearing:
-    if mode == "Advanced":
-        envelope_upper = st.sidebar.selectbox("Envelope Upper (Hz)", [5000,8000,10000,15000], index=1)
+if fault_bearing and mode == "Advanced":
+    envelope_upper = st.sidebar.selectbox("Envelope Upper (Hz)", [5000,8000,10000,15000], index=1)
+else:
+    envelope_upper = 8000
 
 # =========================================================
-# ENGINE CALCULATION
+# CORE ENGINE CALCULATION
 # =========================================================
 
 one_x = rpm / 60
@@ -85,17 +83,34 @@ if fault_gear:
     gear_mesh = gear_teeth * one_x
     sideband_upper = gear_mesh + (sideband_order * one_x)
 
-highest_freq = harmonic_target
+# =========================================================
+# LF / HF AUTO DESIGN
+# =========================================================
 
-if fault_gear:
-    highest_freq = max(highest_freq, sideband_upper)
+# Default LF band (rotational faults)
+lf_lower = max(one_x * 0.5, 1)
+lf_upper = harmonic_target
 
-if fault_bearing:
-    highest_freq = max(highest_freq, envelope_upper)
+# Default HF band
+hf_lower = 500
+hf_upper = envelope_upper if fault_bearing else max(sideband_upper, 2000)
 
+# Advanced override
+if mode == "Advanced":
+    with st.sidebar.expander("Override LF / HF Band"):
+        lf_lower = st.number_input("LF Lower (Hz)", value=float(lf_lower))
+        lf_upper = st.number_input("LF Upper (Hz)", value=float(lf_upper))
+        hf_lower = st.number_input("HF Lower (Hz)", value=float(hf_lower))
+        hf_upper = st.number_input("HF Upper (Hz)", value=float(hf_upper))
+
+# Highest frequency logic
+highest_freq = max(lf_upper, hf_upper)
 fmax = math.ceil(highest_freq * 1.2)
 
-# ISO CLASS LOGIC
+# =========================================================
+# ISO CLASS AUTO
+# =========================================================
+
 if power_kw < 15:
     iso_class = "Class I"
     alert = 2.8
@@ -115,7 +130,7 @@ else:
         danger = 18.0
 
 # =========================================================
-# MONITORING SUMMARY (ALWAYS VISIBLE)
+# MONITORING SUMMARY
 # =========================================================
 
 st.divider()
@@ -125,12 +140,25 @@ col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("RPM", rpm)
 col2.metric("1X Frequency", f"{one_x:.2f} Hz")
-col3.metric("Highest Frequency", f"{highest_freq:.2f} Hz")
-col4.metric("Recommended Fmax", f"{fmax} Hz")
+col3.metric("LF Band", f"{lf_lower:.1f} - {lf_upper:.1f} Hz")
+col4.metric("HF Band", f"{hf_lower:.1f} - {hf_upper:.1f} Hz")
 
+st.write(f"Highest Frequency: {highest_freq:.1f} Hz")
+st.write(f"Recommended Fmax: {fmax} Hz")
 st.write(f"ISO Class: {iso_class}")
 st.write(f"Alert / Danger: {alert} / {danger} mm/s")
 st.write(f"Current Mode: {mode}")
+
+# =========================================================
+# MINI EDUCATION MODE (BASIC)
+# =========================================================
+
+if mode == "Basic":
+    with st.expander("Mini Vibration Education (Junior Mode)"):
+        st.write("1X = RPM / 60 → Fundamental shaft frequency.")
+        st.write("LF Band → Used for unbalance, misalignment, looseness.")
+        st.write("HF Band → Used for bearing & gear impact detection.")
+        st.write("Fmax → Must be higher than highest monitored frequency.")
 
 # =========================================================
 # ADVANCED ENGINEERING BREAKDOWN
@@ -138,18 +166,16 @@ st.write(f"Current Mode: {mode}")
 
 if mode == "Advanced":
     with st.expander("Engineering Calculation Breakdown"):
-        st.write(f"1X = RPM / 60 = {one_x:.2f} Hz")
+        st.write(f"1X = {one_x:.2f} Hz")
         st.write(f"Harmonic Target ({harmonic_order}X) = {harmonic_target:.2f} Hz")
-
         if fault_gear:
-            st.write(f"Gear Mesh = Teeth × 1X = {gear_mesh:.2f} Hz")
+            st.write(f"Gear Mesh = {gear_mesh:.2f} Hz")
             st.write(f"Sideband Upper = {sideband_upper:.2f} Hz")
-
         if fault_bearing:
             st.write(f"Envelope Upper = {envelope_upper} Hz")
-
-        st.write(f"Highest Frequency = {highest_freq:.2f} Hz")
-        st.write(f"Fmax = Highest × 1.2 = {fmax} Hz")
+        st.write(f"LF Band = {lf_lower:.1f} - {lf_upper:.1f} Hz")
+        st.write(f"HF Band = {hf_lower:.1f} - {hf_upper:.1f} Hz")
+        st.write(f"Fmax = {fmax} Hz")
 
 # =========================================================
 # WORKSHEET TABS
@@ -157,13 +183,9 @@ if mode == "Advanced":
 
 tabs = st.tabs([
     "Channels",
-    "Tachometers",
-    "Process Values",
     "Descriptors",
-    "Alarm Setpoints",
     "Waveforms",
-    "Data Collection",
-    "Modbus Registers"
+    "Alarm Setpoints"
 ])
 
 # =========================================================
@@ -171,167 +193,51 @@ tabs = st.tabs([
 # =========================================================
 
 with tabs[0]:
-
     st.header("Channels Worksheet")
 
-    bearing_points = []
-
     if "Motor" in machine_components:
-        bearing_points += ["Motor_DE", "Motor_NDE"]
-
-    if "Gearbox" in machine_components:
-        bearing_points += ["Gearbox_Input", "Gearbox_Output"]
-
-    for point in bearing_points:
-
-        st.subheader(point)
-
-        st.text_input(
-            "Channel Name",
-            value=f"{point}_H",
-            disabled=True,
-            key=f"{point}_name",
-            help="[AUTO] Generated from machine composition."
-        )
-
-        st.selectbox(
-            "Sensor Type",
-            ["Acceleration", "Velocity"],
-            key=f"{point}_sensor",
-            help="[RECOMMENDED] Acceleration preferred for predictive maintenance."
-        )
-
-        st.text_input(
-            "Sensitivity (mV/g)",
-            placeholder="Example: 100",
-            key=f"{point}_sens",
-            help="[MANUAL REQUIRED] Enter from sensor datasheet."
-        )
-
-        st.markdown("---")
-
-# =========================================================
-# TACHOMETER TAB
-# =========================================================
-
-with tabs[1]:
-
-    st.header("Tachometers Worksheet")
-
-    st.checkbox(
-        "Enable Tachometer",
-        value=variable_speed,
-        disabled=True,
-        help="[AUTO] Enabled if variable speed selected."
-    )
-
-# =========================================================
-# PROCESS VALUES TAB
-# =========================================================
-
-with tabs[2]:
-
-    st.header("Process Values Worksheet")
-
-    st.text_input(
-        "Channel Name",
-        key="process_name",
-        help="[MANUAL REQUIRED] Example: Gearbox Temperature."
-    )
-
-    st.number_input(
-        "Bottom @4mA",
-        value=0.0,
-        key="bottom_4ma",
-        help="[MANUAL REQUIRED] Value at 4mA."
-    )
-
-    st.number_input(
-        "Top @20mA",
-        value=100.0,
-        key="top_20ma",
-        help="[MANUAL REQUIRED] Value at 20mA."
-    )
+        for point in ["Motor_DE", "Motor_NDE"]:
+            st.subheader(point)
+            st.text_input(
+                "Channel Name",
+                value=f"{point}_H",
+                disabled=True,
+                key=f"{point}_name",
+                help="[AUTO] Generated from machine composition."
+            )
+            st.text_input(
+                "Sensitivity (mV/g)",
+                key=f"{point}_sens",
+                help="[MANUAL REQUIRED] Enter from sensor datasheet."
+            )
 
 # =========================================================
 # DESCRIPTORS TAB
 # =========================================================
 
-with tabs[3]:
-
+with tabs[1]:
     st.header("Descriptors Worksheet")
 
-    st.success(f"[AUTO] 1X = {one_x:.2f} Hz")
-
-    if fault_unbalance or fault_misalignment:
-        st.info("[RECOMMENDED] Enable Bandpass descriptor")
-
-    if fault_gear:
-        st.success(f"[AUTO] Gear Mesh = {gear_mesh:.2f} Hz")
-
-    if fault_bearing:
-        st.success(f"[AUTO] Envelope Upper = {envelope_upper} Hz")
-
-# =========================================================
-# ALARM TAB
-# =========================================================
-
-with tabs[4]:
-
-    st.header("Alarm Setpoints")
-
-    st.success(f"[AUTO] ISO Class = {iso_class}")
-    st.info(f"[RECOMMENDED] Alert = {alert} mm/s")
-    st.error(f"[RECOMMENDED] Danger = {danger} mm/s")
+    st.success(f"[AUTO] LF Lower = {lf_lower:.1f} Hz")
+    st.success(f"[AUTO] LF Upper = {lf_upper:.1f} Hz")
+    st.success(f"[AUTO] HF Lower = {hf_lower:.1f} Hz")
+    st.success(f"[AUTO] HF Upper = {hf_upper:.1f} Hz")
 
 # =========================================================
 # WAVEFORM TAB
 # =========================================================
 
-with tabs[5]:
-
+with tabs[2]:
     st.header("Waveform Configuration")
-
     st.success(f"[AUTO] Fmax = {fmax} Hz")
-
-    st.selectbox(
-        "Lines",
-        [6400, 12800, 25600],
-        index=1,
-        help="[RECOMMENDED] Higher lines = better frequency resolution."
-    )
+    st.selectbox("Lines", [6400,12800,25600], index=1)
 
 # =========================================================
-# DATA COLLECTION TAB
+# ALARM TAB
 # =========================================================
 
-with tabs[6]:
-
-    st.header("Data Collection")
-
-    st.selectbox(
-        "Scalar Interval (sec)",
-        [30, 60, 120],
-        index=1,
-        help="[RECOMMENDED] Shorter interval for critical machine."
-    )
-
-# =========================================================
-# MODBUS TAB
-# =========================================================
-
-with tabs[7]:
-
-    st.header("Modbus Registers")
-
-    st.text_input(
-        "Register Start",
-        value="100",
-        help="[RECOMMENDED] Default starting register."
-    )
-
-    st.text_input(
-        "Scaling",
-        key="modbus_scaling",
-        help="[MANUAL REQUIRED] If PLC integration needed."
-    )
+with tabs[3]:
+    st.header("Alarm Setpoints")
+    st.success(f"[AUTO] ISO Class = {iso_class}")
+    st.info(f"[RECOMMENDED] Alert = {alert} mm/s")
+    st.error(f"[RECOMMENDED] Danger = {danger} mm/s")
