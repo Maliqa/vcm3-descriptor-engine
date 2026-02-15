@@ -1,101 +1,101 @@
 import streamlit as st
 import math
 
-st.set_page_config(page_title="VCM-3 Smart Worksheet Assistant", layout="wide")
+# =====================================================
+# PAGE CONFIG
+# =====================================================
 
-st.title("VCM-3 Smart Worksheet Assistant – Mirror Mode")
-st.caption("AUTO fields locked | RECOMMENDED & MANUAL editable")
+st.set_page_config(page_title="VCM-3 Smart Configurator", layout="wide")
 
-# =========================================================
-# ================= CORE INPUT ENGINE =====================
-# =========================================================
+st.title("VCM-3 Smart Configurator")
+st.caption("Engineering Assistant for VCM-3 Worksheet Filling")
 
-st.sidebar.header("Core Machine Input")
+# =====================================================
+# SIDEBAR – MACHINE SETUP
+# =====================================================
 
-rpm = st.sidebar.number_input(
-    "RPM",
-    min_value=1,
-    value=1500,
-    help="Kecepatan putar mesin. Semua frekuensi dihitung dari RPM."
+st.sidebar.header("Machine Setup")
+
+rpm = st.sidebar.number_input("Max RPM", min_value=1, value=1500)
+power_kw = st.sidebar.number_input("Motor Power (kW)", min_value=0.1, value=15.0)
+foundation = st.sidebar.selectbox("Foundation Type", ["Rigid", "Soft"])
+variable_speed = st.sidebar.checkbox("Variable Speed Machine?")
+
+machine_components = st.sidebar.multiselect(
+    "Machine Composition",
+    ["Motor", "Gearbox", "Fan", "Pump"],
+    default=["Motor"]
 )
 
-variable_speed = st.sidebar.checkbox(
-    "Variable Speed?",
-    help="Aktifkan jika mesin memiliki variasi RPM."
+monitor_harmonic = st.sidebar.selectbox(
+    "Monitor Harmonic Up To:",
+    [2, 3, 4, 5, 6],
+    index=2
 )
 
-use_motor = st.sidebar.checkbox("Motor")
-use_gearbox = st.sidebar.checkbox("Gearbox")
-use_fan = st.sidebar.checkbox("Fan")
-use_pump = st.sidebar.checkbox("Pump")
+fault_unbalance = st.sidebar.checkbox("Unbalance")
+fault_misalignment = st.sidebar.checkbox("Misalignment")
+fault_looseness = st.sidebar.checkbox("Looseness")
+fault_gear = st.sidebar.checkbox("Gear Fault")
+fault_bearing = st.sidebar.checkbox("Bearing Fault")
 
 gear_teeth = 0
-blade_count = 0
-vane_count = 0
+sideband_order = 0
 
-if use_gearbox:
-    gear_teeth = st.sidebar.number_input("Gear Teeth", value=30)
+if fault_gear:
+    gear_teeth = st.sidebar.number_input("Gear Teeth", min_value=1, value=30)
+    sideband_order = st.sidebar.selectbox("Sideband ±nX", [1, 2, 3], index=1)
 
-if use_fan:
-    blade_count = st.sidebar.number_input("Blade Count", value=8)
+envelope_upper = 8000
+if fault_bearing:
+    envelope_upper = st.sidebar.selectbox("Envelope Upper (Hz)", [5000, 8000, 10000, 15000], index=1)
 
-if use_pump:
-    vane_count = st.sidebar.number_input("Vane Count", value=6)
+# =====================================================
+# CORE CALCULATION ENGINE
+# =====================================================
 
-st.sidebar.divider()
+one_x = rpm / 60
+harmonic_target = one_x * monitor_harmonic
 
-st.sidebar.header("Fault Strategy")
+gear_mesh = 0
+sideband_upper = 0
 
-desc_iso = st.sidebar.checkbox("ISO RMS")
-desc_rot = st.sidebar.checkbox("Rotational Band")
-desc_gmf = st.sidebar.checkbox("Gear Mesh")
-desc_env = st.sidebar.checkbox("Envelope")
+if fault_gear:
+    gear_mesh = gear_teeth * one_x
+    sideband_upper = gear_mesh + (sideband_order * one_x)
 
-harmonic_order = st.sidebar.selectbox("Harmonic Coverage", [2,3,4,5], index=2)
+highest_freq = harmonic_target
 
-st.sidebar.divider()
+if fault_gear:
+    highest_freq = max(highest_freq, sideband_upper)
 
-st.sidebar.header("ISO Classification")
+if fault_bearing:
+    highest_freq = max(highest_freq, envelope_upper)
 
-iso_class = st.sidebar.selectbox(
-    "ISO Class",
-    ["Class I", "Class II", "Class III", "Class IV"]
-)
+fmax = math.ceil(highest_freq * 1.2)
 
-iso_limits = {
-    "Class I": (2.8, 4.5),
-    "Class II": (4.5, 7.1),
-    "Class III": (7.1, 11.0),
-    "Class IV": (11.0, 18.0)
-}
+# ISO Simplified Logic
+if power_kw < 15:
+    iso_class = "Class I"
+    alert = 2.8
+    danger = 4.5
+elif power_kw < 75:
+    iso_class = "Class II"
+    alert = 4.5
+    danger = 7.1
+else:
+    if foundation == "Rigid":
+        iso_class = "Class III"
+        alert = 7.1
+        danger = 11.0
+    else:
+        iso_class = "Class IV"
+        alert = 11.0
+        danger = 18.0
 
-alert_level, danger_level = iso_limits[iso_class]
-
-# =========================================================
-# ================= ENGINE CALCULATION ====================
-# =========================================================
-
-shaft_freq = rpm / 60
-frequency_targets = []
-
-if desc_rot:
-    harmonic_target = shaft_freq * harmonic_order
-    frequency_targets.append(harmonic_target)
-
-if desc_gmf and use_gearbox:
-    gmf = gear_teeth * shaft_freq
-    frequency_targets.append(gmf)
-
-if desc_env:
-    envelope_upper = 5000
-    frequency_targets.append(envelope_upper)
-
-highest_freq = max(frequency_targets) if frequency_targets else shaft_freq
-Fmax = highest_freq * 1.2
-
-# =========================================================
-# ================= TAB STRUCTURE =========================
-# =========================================================
+# =====================================================
+# TABS PER WORKSHEET
+# =====================================================
 
 tabs = st.tabs([
     "Channels",
@@ -108,222 +108,189 @@ tabs = st.tabs([
     "Modbus Registers"
 ])
 
-# =========================================================
-# ================= TAB 1 – CHANNELS ======================
-# =========================================================
+# =====================================================
+# CHANNELS TAB
+# =====================================================
 
 with tabs[0]:
+
     st.header("Channels Worksheet")
 
-    bearing_list = []
-    if use_motor:
-        bearing_list += ["Motor_DE", "Motor_NDE"]
-    if use_gearbox:
-        bearing_list += ["Gearbox_Input", "Gearbox_Output"]
+    bearing_points = []
 
-    for bearing in bearing_list:
-        st.subheader(bearing)
+    if "Motor" in machine_components:
+        bearing_points += ["Motor_DE", "Motor_NDE"]
+
+    if "Gearbox" in machine_components:
+        bearing_points += ["Gearbox_Input", "Gearbox_Output"]
+
+    for point in bearing_points:
+        st.subheader(point)
 
         st.text_input(
             "Channel Name",
-            value=f"{bearing}_H",
+            value=f"{point}_H",
             disabled=True,
-            help="AUTO – Dibentuk otomatis berdasarkan machine composition."
+            key=f"{point}_name",
+            help="AUTO – Generated from machine composition."
         )
 
         st.selectbox(
             "Sensor Type",
             ["Acceleration", "Velocity"],
-            help="RECOMMENDED – Acceleration untuk predictive maintenance."
+            key=f"{point}_sensor",
+            help="RECOMMENDED – Acceleration for predictive maintenance."
         )
 
         st.text_input(
             "Sensitivity (mV/g)",
-            placeholder="Isi sesuai datasheet",
-            help="MANUAL REQUIRED – Contoh: 100 mV/g."
+            placeholder="Example: 100",
+            key=f"{point}_sens",
+            help="MANUAL – From sensor datasheet."
         )
 
         st.text_input(
             "Unit",
             value="m/s²",
             disabled=True,
-            help="AUTO – Unit default acceleration."
+            key=f"{point}_unit",
+            help="AUTO – Default acceleration unit."
         )
 
-# =========================================================
-# ================= TAB 2 – TACHOMETERS ===================
-# =========================================================
+        st.markdown("---")
+
+# =====================================================
+# TACHOMETER TAB
+# =====================================================
 
 with tabs[1]:
-    st.header("Tachometer Worksheet")
 
-    st.checkbox(
-        "Enable Tachometer",
-        value=variable_speed,
-        disabled=True,
-        help="AUTO – Aktif jika variable speed dipilih."
-    )
+    st.header("Tachometers Worksheet")
 
-    st.selectbox(
-        "Trigger Type",
-        ["Rising", "Falling"],
-        help="RECOMMENDED – Rising edge umum digunakan."
-    )
+    if variable_speed:
+        st.success("AUTO – Tachometer Recommended")
+        st.text_input(
+            "Tach Channel Name",
+            value="Tacho_1",
+            key="tacho_name",
+            help="AUTO – Required for variable speed machine."
+        )
+    else:
+        st.info("Tachometer optional for constant speed machines.")
 
-    st.text_input(
-        "Threshold Voltage",
-        placeholder="Isi sesuai sensor",
-        help="MANUAL REQUIRED – Sesuai tipe tachometer."
-    )
-
-# =========================================================
-# ================= TAB 3 – PROCESS VALUES ================
-# =========================================================
+# =====================================================
+# PROCESS VALUES TAB
+# =====================================================
 
 with tabs[2]:
+
     st.header("Process Values Worksheet")
 
     st.text_input(
         "Channel Name",
-        placeholder="Contoh: Gearbox Temp",
-        help="MANUAL REQUIRED – Nama parameter process."
+        value="Temperature_1",
+        key="process_name",
+        help="MANUAL – Define process variable (temperature, pressure, etc)."
     )
 
-    st.text_input(
-        "Bottom @4mA",
-        help="MANUAL REQUIRED – Nilai fisik saat 4mA."
+    st.number_input(
+        "Bottom Value @4mA",
+        value=0.0,
+        key="bottom_4ma",
+        help="MANUAL – From sensor datasheet."
     )
 
-    st.text_input(
-        "Top @20mA",
-        help="MANUAL REQUIRED – Nilai fisik saat 20mA."
+    st.number_input(
+        "Top Value @20mA",
+        value=100.0,
+        key="top_20ma",
+        help="MANUAL – From sensor datasheet."
     )
 
-# =========================================================
-# ================= TAB 4 – DESCRIPTORS ===================
-# =========================================================
+# =====================================================
+# DESCRIPTORS TAB
+# =====================================================
 
 with tabs[3]:
+
     st.header("Descriptors Worksheet")
 
-    if desc_iso:
-        st.text_input(
-            "ISO Lower",
-            value="10 Hz",
-            disabled=True,
-            help="AUTO – ISO band fixed 10–1000 Hz."
-        )
-        st.text_input(
-            "ISO Upper",
-            value="1000 Hz",
-            disabled=True
-        )
+    st.success(f"AUTO – 1X = {one_x:.2f} Hz")
+    st.success(f"AUTO – Harmonic Target ({monitor_harmonic}X) = {harmonic_target:.2f} Hz")
 
-    if desc_rot:
-        st.text_input(
-            "Rotational Upper",
-            value=f"{harmonic_order}X",
-            disabled=True,
-            help="AUTO – Berdasarkan harmonic coverage."
-        )
+    if fault_gear:
+        st.success(f"AUTO – Gear Mesh = {gear_mesh:.2f} Hz")
 
-    if desc_gmf and use_gearbox:
-        st.text_input(
-            "Gear Mesh Frequency",
-            value=f"{gmf:.2f} Hz",
-            disabled=True,
-            help="AUTO – Teeth × 1X."
-        )
+    if fault_bearing:
+        st.success(f"AUTO – Envelope Upper = {envelope_upper} Hz")
 
-# =========================================================
-# ================= TAB 5 – ALARM =========================
-# =========================================================
+    st.success(f"AUTO – Recommended Fmax = {fmax} Hz")
+
+    st.markdown("---")
+
+    if fault_unbalance or fault_misalignment or fault_looseness:
+        st.info("RECOMMENDED – Enable Bandpass descriptor")
+
+    if fault_bearing:
+        st.info("RECOMMENDED – Enable Envelope descriptor")
+
+# =====================================================
+# ALARM TAB
+# =====================================================
 
 with tabs[4]:
+
     st.header("Alarm Setpoints Worksheet")
 
-    st.text_input(
-        "ISO Alert",
-        value=f"{alert_level} mm/s",
-        disabled=True,
-        help="AUTO – Berdasarkan ISO Class."
-    )
+    st.success(f"AUTO – ISO Class = {iso_class}")
+    st.success(f"RECOMMENDED – Alert = {alert} mm/s")
+    st.error(f"RECOMMENDED – Danger = {danger} mm/s")
 
-    st.text_input(
-        "ISO Danger",
-        value=f"{danger_level} mm/s",
-        disabled=True
-    )
-
-    st.text_input(
-        "Delay (seconds)",
-        placeholder="Contoh: 5",
-        help="MANUAL REQUIRED – Mencegah false alarm."
-    )
-
-# =========================================================
-# ================= TAB 6 – WAVEFORMS =====================
-# =========================================================
+# =====================================================
+# WAVEFORM TAB
+# =====================================================
 
 with tabs[5]:
-    st.header("Waveforms Worksheet")
 
-    st.text_input(
-        "Fmax",
-        value=f"{Fmax:.2f} Hz",
-        disabled=True,
-        help="AUTO – Frekuensi tertinggi + margin 20%."
-    )
+    st.header("Waveform Configuration")
 
-    st.selectbox(
-        "Lines",
-        [6400, 12800, 25600],
-        index=1,
-        help="RECOMMENDED – Semakin besar semakin tinggi resolusi."
-    )
+    st.success(f"AUTO – Set Fmax = {fmax} Hz")
+    st.info("RECOMMENDED – Set appropriate resolution for harmonic visibility.")
 
-    st.selectbox(
-        "Window",
-        ["Hanning", "Rectangular"],
-        help="RECOMMENDED – Hanning untuk analisa umum."
-    )
-
-# =========================================================
-# ================= TAB 7 – DATA COLLECTION ===============
-# =========================================================
+# =====================================================
+# DATA COLLECTION TAB
+# =====================================================
 
 with tabs[6]:
-    st.header("Data Collection Worksheet")
 
-    st.selectbox(
-        "Scalar Interval",
-        [30, 60, 120],
-        index=1,
-        help="RECOMMENDED – Interval update scalar."
-    )
+    st.header("Data Collection")
 
-    st.selectbox(
-        "Waveform Interval",
-        [300, 600, 900],
-        index=1,
-        help="RECOMMENDED – Interval update waveform."
-    )
+    if variable_speed:
+        st.info("RECOMMENDED – Short measuring time for variable speed tracking.")
+    else:
+        st.info("Standard measuring time acceptable.")
 
-# =========================================================
-# ================= TAB 8 – MODBUS ========================
-# =========================================================
+# =====================================================
+# MODBUS TAB
+# =====================================================
 
 with tabs[7]:
-    st.header("Modbus Register Worksheet")
 
-    st.text_input(
-        "Register Start",
-        value="100",
-        help="RECOMMENDED – Default start register."
-    )
+    st.header("Modbus Registers")
 
-    st.text_input(
-        "Scaling",
-        placeholder="Isi jika perlu scaling",
-        help="MANUAL REQUIRED – Sesuai kebutuhan PLC."
-    )
+    st.info("MANUAL – Configure only if external PLC integration required.")
+
+# =====================================================
+# FINAL SUMMARY
+# =====================================================
+
+st.header("Final Engineering Summary")
+
+st.write(f"""
+- RPM: {rpm}
+- 1X Frequency: {one_x:.2f} Hz
+- Highest Monitoring Frequency: {highest_freq:.2f} Hz
+- Recommended Fmax: {fmax} Hz
+- ISO Class: {iso_class}
+- Alert/Danger: {alert}/{danger} mm/s
+""")
