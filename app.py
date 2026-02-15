@@ -1,26 +1,32 @@
 import streamlit as st
 import math
 
-st.set_page_config(page_title="VCM-3 Smart Configurator", layout="wide")
+st.set_page_config(page_title="VCM-3 Smart Worksheet Assistant", layout="wide")
 
-st.title("VCM-3 Smart Configurator")
-st.caption("Internal Engineer Version – Worksheet Assistant Mode")
+st.title("VCM-3 Smart Worksheet Assistant 2.0")
+st.caption("Internal Engineering Version – Structured Per Worksheet")
 
 # =========================================================
-# SIDEBAR INPUT SECTION
+# ================= SIDEBAR INPUT =========================
 # =========================================================
 
 st.sidebar.header("Machine Basic Information")
 
-rpm = st.sidebar.number_input("RPM (Max Speed)", min_value=1, value=1500)
-variable_speed = st.sidebar.checkbox("Variable Speed Machine?")
-monitoring_level = "Advanced (H + V + Axial)"
+rpm = st.sidebar.number_input(
+    "RPM (Max Speed)",
+    min_value=1,
+    value=1500,
+    help="RPM adalah kecepatan putar mesin. Semua frekuensi (1X, GMF, harmonic) dihitung dari sini."
+)
+
+variable_speed = st.sidebar.checkbox(
+    "Variable Speed Machine?",
+    help="Aktifkan jika mesin memiliki variasi RPM. Tachometer akan direkomendasikan."
+)
 
 st.sidebar.divider()
 
-# -------------------------
-# Machine Composition
-# -------------------------
+# ---------------- Machine Composition --------------------
 
 st.sidebar.header("Machine Composition")
 
@@ -34,57 +40,72 @@ blade_count = 0
 vane_count = 0
 
 if use_gearbox:
-    gear_teeth = st.sidebar.number_input("Gear Teeth", min_value=1, value=30)
+    gear_teeth = st.sidebar.number_input(
+        "Gear Teeth",
+        min_value=1,
+        value=30,
+        help="Jumlah gigi gear. Digunakan untuk menghitung Gear Mesh Frequency."
+    )
 
 if use_fan:
-    blade_count = st.sidebar.number_input("Blade Count", min_value=1, value=8)
+    blade_count = st.sidebar.number_input(
+        "Blade Count",
+        min_value=1,
+        value=8,
+        help="Jumlah blade fan untuk menghitung Blade Pass Frequency."
+    )
 
 if use_pump:
-    vane_count = st.sidebar.number_input("Vane Count", min_value=1, value=6)
+    vane_count = st.sidebar.number_input(
+        "Vane Count",
+        min_value=1,
+        value=6,
+        help="Jumlah vane pump untuk menghitung Vane Pass Frequency."
+    )
 
 st.sidebar.divider()
 
-# -------------------------
-# Descriptor Selection
-# -------------------------
+# ---------------- Descriptor Selection --------------------
 
 st.sidebar.header("Descriptor Selection")
 
 desc_iso = st.sidebar.checkbox(
     "ISO RMS",
-    help="Overall machine vibration 10–1000 Hz band (global health indicator)"
+    help="Band 10–1000 Hz untuk overall vibration level."
 )
 
 desc_rot = st.sidebar.checkbox(
     "Rotational Band",
-    help="1X to nX harmonic band for unbalance/misalignment detection"
+    help="Monitoring harmonic 1X–nX untuk unbalance/misalignment."
 )
 
 desc_env = st.sidebar.checkbox(
     "Envelope",
-    help="High-frequency band for early bearing fault detection"
+    help="Monitoring frekuensi tinggi untuk deteksi dini kerusakan bearing."
 )
 
 desc_gmf = st.sidebar.checkbox(
     "Gear Mesh",
-    help="GMF ± sideband monitoring for gear wear detection"
+    help="Monitoring Gear Mesh Frequency (teeth × 1X) ± sideband."
 )
 
 desc_bpf = st.sidebar.checkbox(
     "Blade/Vane Pass",
-    help="Blade or vane pass frequency monitoring"
+    help="Monitoring Blade/Vane pass frequency."
 )
 
 harmonic_order = st.sidebar.selectbox(
-    "Harmonic Coverage (for Rotational)",
+    "Harmonic Coverage",
     [2, 3, 4, 5, 6],
-    index=2
+    index=2,
+    help="Menentukan sampai harmonic ke berapa yang dimonitor."
 )
 
 sideband_order = st.sidebar.selectbox(
-    "Sideband Coverage (for Gear)",
+    "Gear Sideband Coverage",
     [1, 2, 3],
-    index=1
+    index=1,
+    help="Jumlah sideband di sekitar GMF (± n × 1X)."
 )
 
 envelope_lower = 500
@@ -96,9 +117,7 @@ if desc_env:
 
 st.sidebar.divider()
 
-# -------------------------
-# LF / HF Override
-# -------------------------
+# ---------------- LF / HF Override --------------------
 
 st.sidebar.header("LF / HF Override")
 
@@ -114,20 +133,19 @@ if override_hf:
 
 st.sidebar.divider()
 
-# -------------------------
-# ISO Class
-# -------------------------
+# ---------------- ISO Classification --------------------
 
 st.sidebar.header("ISO Classification")
 
 iso_class = st.sidebar.selectbox(
-    "Select ISO Class",
+    "ISO Class",
     [
         "Class I - Small",
         "Class II - Medium",
         "Class III - Large Rigid",
         "Class IV - Large Soft"
-    ]
+    ],
+    help="Menentukan batas Alert dan Danger berdasarkan ukuran mesin."
 )
 
 iso_limits = {
@@ -140,19 +158,16 @@ iso_limits = {
 alert_level, danger_level = iso_limits[iso_class]
 
 # =========================================================
-# PROCESSING ENGINE
+# ================= ENGINE PROCESSING =====================
 # =========================================================
 
 shaft_freq = rpm / 60
-
 frequency_targets = []
 
-# Rotational
 if desc_rot:
     harmonic_target = shaft_freq * harmonic_order
     frequency_targets.append(harmonic_target)
 
-# Gear Mesh
 gmf = 0
 gmf_upper = 0
 if desc_gmf and use_gearbox:
@@ -160,7 +175,6 @@ if desc_gmf and use_gearbox:
     gmf_upper = gmf + (sideband_order * shaft_freq)
     frequency_targets.append(gmf_upper)
 
-# Blade/Vane
 blade_pass = 0
 if desc_bpf and use_fan:
     blade_pass = blade_count * shaft_freq
@@ -170,20 +184,13 @@ if desc_bpf and use_pump:
     vane_pass = vane_count * shaft_freq
     frequency_targets.append(vane_pass)
 
-# Envelope
 if desc_env:
     frequency_targets.append(envelope_upper)
 
-if len(frequency_targets) == 0:
-    highest_freq = shaft_freq
-else:
-    highest_freq = max(frequency_targets)
-
+highest_freq = max(frequency_targets) if frequency_targets else shaft_freq
 Fmax = highest_freq * 1.2
 
-# -------------------------
-# LF / HF AUTO LOGIC
-# -------------------------
+# -------- LF/HF AUTO ---------
 
 if desc_env:
     LF_auto = envelope_lower
@@ -197,47 +204,31 @@ HF_auto = Fmax * 1.2
 LF_used = manual_lf if override_lf else LF_auto
 HF_used = manual_hf if override_hf else HF_auto
 
-# Validation
-if LF_used >= HF_used:
-    st.warning("Warning: LF must be lower than HF")
-
-if HF_used < Fmax:
-    st.warning("Warning: HF should not be lower than Fmax")
-
 # =========================================================
-# CHANNEL ALLOCATION (Advanced H+V+A)
+# ================= CHANNEL ALLOCATION ====================
 # =========================================================
 
 bearing_list = []
 
 if use_motor:
     bearing_list += ["Motor_DE", "Motor_NDE"]
-
 if use_gearbox:
     bearing_list += ["Gearbox_Input", "Gearbox_Output"]
-
 if use_fan:
     bearing_list += ["Fan_DE", "Fan_NDE"]
-
 if use_pump:
     bearing_list += ["Pump_DE", "Pump_NDE"]
-
-channels_required = len(bearing_list) * 3
-max_channels = 12
 
 channel_map = []
 optimization_log = []
 
-axis_priority = ["H", "V", "A"]
-
 for bearing in bearing_list:
-    for axis in axis_priority:
+    for axis in ["H", "V", "A"]:
         channel_map.append((bearing, axis))
 
-if len(channel_map) > max_channels:
-    overflow = len(channel_map) - max_channels
+if len(channel_map) > 12:
+    overflow = len(channel_map) - 12
 
-    # Remove Axial first (low priority bearings last)
     for bearing in reversed(bearing_list):
         if overflow <= 0:
             break
@@ -246,7 +237,6 @@ if len(channel_map) > max_channels:
             optimization_log.append(f"Removed Axial from {bearing}")
             overflow -= 1
 
-    # Remove Vertical if still overflow
     for bearing in reversed(bearing_list):
         if overflow <= 0:
             break
@@ -256,20 +246,19 @@ if len(channel_map) > max_channels:
             overflow -= 1
 
 # =========================================================
-# OUTPUT SECTION
+# ================= OUTPUT SECTION ========================
 # =========================================================
 
 st.divider()
-st.header("Monitoring Summary")
+st.header("1️⃣ Monitoring Summary")
 
 col1, col2, col3 = st.columns(3)
-
 col1.metric("RPM", rpm)
 col2.metric("1X Frequency (Hz)", f"{shaft_freq:.2f}")
 col3.metric("Fmax (Hz)", f"{Fmax:.2f}")
 
 st.divider()
-st.header("Channel Allocation (Optimized)")
+st.header("2️⃣ Channels Worksheet")
 
 for i, (bearing, axis) in enumerate(channel_map, start=1):
     st.write(f"Channel {i:02d} – {bearing} – {axis}")
@@ -278,7 +267,7 @@ if variable_speed:
     st.write("Channel 13 – Tachometer – Enabled")
 
 st.divider()
-st.header("Waveform Configuration")
+st.header("3️⃣ Waveforms Worksheet")
 
 st.write(f"Fmax : {Fmax:.2f} Hz")
 st.write(f"LF Used : {LF_used:.2f} Hz (Auto: {LF_auto:.2f})")
@@ -288,34 +277,45 @@ st.write("Averaging : 3")
 st.write("Overlap : 50%")
 
 st.divider()
-st.header("Descriptor Configuration")
+st.header("4️⃣ Descriptors Worksheet")
 
 if desc_iso:
-    st.write("ISO_RMS_GLOBAL → 10–1000 Hz")
+    st.write("ISO RMS → 10–1000 Hz")
 
 if desc_rot:
-    st.write(f"ROT_{harmonic_order}X → 1X–{harmonic_order}X band")
+    st.write(f"Rotational Band → 1X–{harmonic_order}X")
 
 if desc_gmf and use_gearbox:
-    st.write(f"GMF → {gmf:.2f} Hz ± {sideband_order}X")
+    st.write(f"Gear Mesh → {gmf:.2f} Hz ± {sideband_order}X")
 
 if desc_bpf and use_fan:
-    st.write(f"BLADE_PASS → {blade_pass:.2f} Hz")
+    st.write(f"Blade Pass → {blade_pass:.2f} Hz")
 
 if desc_env:
-    st.write(f"ENVELOPE → {envelope_lower}–{envelope_upper} Hz")
+    st.write(f"Envelope → {envelope_lower}–{envelope_upper} Hz")
 
 st.divider()
-st.header("Alarm Setpoints")
+st.header("5️⃣ Alarm Setpoints Worksheet")
 
 st.write(f"ISO Alert : {alert_level} mm/s RMS")
 st.write(f"ISO Danger : {danger_level} mm/s RMS")
 
 st.divider()
+st.header("6️⃣ Data Collection Worksheet")
 
-with st.expander("Channel Optimization Log"):
+st.write("Scalar Update Rate : 60 s")
+st.write("Waveform Update Rate : 600 s")
+
+st.divider()
+st.header("7️⃣ Modbus Register Worksheet")
+
+st.write("Register mapping auto-generate based on channel order.")
+
+st.divider()
+
+with st.expander("🔍 Channel Optimization Log"):
     if optimization_log:
         for log in optimization_log:
             st.write(log)
     else:
-        st.write("No optimization required. Within 12 channel limit.")
+        st.write("No optimization required.")
